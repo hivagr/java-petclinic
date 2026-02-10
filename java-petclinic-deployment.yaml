@@ -1,0 +1,165 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    kubernetes.io/metadata.name: java-petclinic
+  name: java-petclinic
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-petclinic
+  namespace: java-petclinic
+  labels:
+    app: java-petclinic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: java-petclinic
+  template:
+    metadata:
+      labels:
+        app: java-petclinic
+    spec:
+      containers:
+        - name: java-petclinic
+          image: java-petclinic:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: postgres
+            - name: POSTGRES_URL
+              value: jdbc:postgresql://demo-db:5432/petclinic
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: username
+            - name: POSTGRES_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-petclinic
+  namespace: java-petclinic
+  labels:
+    app: java-petclinic
+spec:
+  type: ClusterIP
+  selector:
+    app: java-petclinic
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-db
+  namespace: java-petclinic
+type: servicebinding.io/postgresql
+stringData:
+  type: "postgresql"
+  provider: "postgresql"
+  host: "demo-db"
+  port: "5432"
+  database: "petclinic"
+  username: "user"
+  password: "pass"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-db
+  namespace: java-petclinic
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: demo-db
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-db
+  namespace: java-petclinic
+  labels:
+    app: demo-db
+spec:
+  selector:
+    matchLabels:
+      app: demo-db
+  template:
+    metadata:
+      labels:
+        app: demo-db
+    spec:
+      containers:
+        - image: postgres:18.1
+          name: postgresql
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: demo-db
+                  key: database
+          ports:
+            - containerPort: 5432
+              name: postgresql
+          livenessProbe:
+            tcpSocket:
+              port: postgresql
+          readinessProbe:
+            tcpSocket:
+              port: postgresql
+          startupProbe:
+            tcpSocket:
+              port: postgresql
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 1
+              memory: 1Gi
